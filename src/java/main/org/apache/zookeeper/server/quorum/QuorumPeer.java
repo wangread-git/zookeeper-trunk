@@ -841,6 +841,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         Election le=null;
 
         //TODO: use a factory rather than a switch
+        //默认为FastLeaderElection算法，前3种已经废弃
         switch (electionAlgorithm) {
         case 0:
             le = new LeaderElection(this);
@@ -907,6 +908,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
         updateThreadName();
 
         LOG.debug("Starting quorum peer");
+        //初始化
         try {
             jmxQuorumBean = new QuorumBean(this);
             MBeanRegistry.getInstance().register(jmxQuorumBean, null);
@@ -939,6 +941,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
             /*
              * Main loop
              */
+            //状态检测
             while (running) {
                 switch (getPeerState()) {
                 case LOOKING:
@@ -996,6 +999,7 @@ public class QuorumPeer extends ZooKeeperThread implements QuorumStats.Provider 
                                shuttingDownLE = false;
                                startLeaderElection();
                                }
+                            //开始选举并将选举结果写到currentVote
                             setCurrentVote(makeLEStrategy().lookForLeader());
                         } catch (Exception e) {
                             LOG.warn("Unexpected exception", e);

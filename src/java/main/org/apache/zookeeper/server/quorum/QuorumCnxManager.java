@@ -109,11 +109,14 @@ public class QuorumCnxManager {
      * Mapping from Peer to Thread number
      */
     final ConcurrentHashMap<Long, SendWorker> senderWorkerMap;
+    //要发送给其他server的消息，不同的server有不同的消息队列
     final ConcurrentHashMap<Long, ArrayBlockingQueue<ByteBuffer>> queueSendMap;
     final ConcurrentHashMap<Long, ByteBuffer> lastMessageSent;
 
     /*
      * Reception queue
+     *
+     * 从其他server收到的消息
      */
     public final ArrayBlockingQueue<Message> recvQueue;
     /*
@@ -226,7 +229,8 @@ public class QuorumCnxManager {
         
         this.self = self;
 
-        // Starts listener thread that waits for connection requests 
+        // Starts listener thread that waits for connection requests
+        //负责接受其他的server的连接或者向其他server发起连接请求
         listener = new Listener();
         listener.setName("QuorumPeerListener");
     }
@@ -274,12 +278,15 @@ public class QuorumCnxManager {
         }
         
         // If lost the challenge, then drop the new connection
+        // 必须由大端server向小端server发起连接请求
+        // 检查本次连接操作是否合法，即对端server的sid必须小于自身的sid，否则关闭连接
         if (sid > self.getId()) {
             LOG.info("Have smaller server identifier, so dropping the " +
                      "connection: (" + sid + ", " + self.getId() + ")");
             closeSocket(sock);
             // Otherwise proceed with the connection
         } else {
+            //如果合法，则创建该sid对应的SendWorker和RecvWorker，并将socket绑定
             SendWorker sw = new SendWorker(sock, sid);
             RecvWorker rw = new RecvWorker(sock, sid, sw);
             sw.setRecv(rw);
@@ -288,11 +295,14 @@ public class QuorumCnxManager {
             
             if(vsw != null)
                 vsw.finish();
-            
+
+            // 将SendWorker绑定到senderWorkerMap中
             senderWorkerMap.put(sid, sw);
+            // 创建sid对应的消息队列
             queueSendMap.putIfAbsent(sid, new ArrayBlockingQueue<ByteBuffer>(
                         SEND_CAPACITY));
-            
+
+            // 开启与对端server的发送线程与接收线程
             sw.start();
             rw.start();
             
@@ -400,6 +410,7 @@ public class QuorumCnxManager {
         /*
          * If sending message to myself, then simply enqueue it (loopback).
          */
+        //第一次投票会投给自己，直接添加到接收队列中
         if (self.getId() == sid) {
              b.position(0);
              addToRecvQueue(new Message(b.duplicate(), sid));
@@ -407,17 +418,20 @@ public class QuorumCnxManager {
              * Otherwise send to the corresponding thread to send.
              */
         } else {
+            //将自己的投票发送给其他的server
              /*
               * Start a new connection if doesn't have one already.
               */
              ArrayBlockingQueue<ByteBuffer> bq = new ArrayBlockingQueue<ByteBuffer>(
                 SEND_CAPACITY);
              ArrayBlockingQueue<ByteBuffer> oldq = queueSendMap.putIfAbsent(sid, bq);
+            //添加到发送队列
              if (oldq != null) {
                  addToSendQueue(oldq, b);
              } else {
                  addToSendQueue(bq, b);
              }
+            //尝试向对应的server发起连接请求
              connectOne(sid);
                 
         }
@@ -430,6 +444,7 @@ public class QuorumCnxManager {
      *  @return boolean success indication
      */
     synchronized private boolean connectOne(long sid, InetSocketAddress electionAddr){
+        //每个server都有自己对应的发送线程，senderWorker维护了socket，需要先判断当前sid是否已经创建了senderWorker
         if (senderWorkerMap.get(sid) != null) {
             LOG.debug("There is a connection already for server " + sid);
             return true;
@@ -441,6 +456,9 @@ public class QuorumCnxManager {
              }
              Socket sock = new Socket();
              setSockOpts(sock);
+            //这里会尝试建立一次连接，对端的server的QuorumCnxManager.Listener会accept主这个连接，然后判断
+            //此次连接是否合法，如果非法的话会结束本次连接由对端的server主动发起另外的连接，再有本server的
+            //Listener accept住，然后由Listener创建本server与对端server对应的SendWorker和RecvWorker
              sock.connect(electionAddr, cnxTO);
              if (LOG.isDebugEnabled()) {
                  LOG.debug("Connected to server " + sid);
@@ -471,6 +489,7 @@ public class QuorumCnxManager {
      */
     
     synchronized void connectOne(long sid){
+        //如果已经建立连接则不再继续
         if (senderWorkerMap.get(sid) != null) {
              LOG.debug("There is a connection already for server " + sid);
              return;
@@ -617,6 +636,7 @@ public class QuorumCnxManager {
 
             while((!shutdown) && (numRetries < 3)){
                 try {
+                    //先创建ServerSocket，监听其他server的连接
                     ss = new ServerSocket();
                     ss.setReuseAddress(true);
                     if (self.getQuorumListenOnAllIPs()) {

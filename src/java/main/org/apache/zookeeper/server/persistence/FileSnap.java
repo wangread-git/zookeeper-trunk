@@ -76,6 +76,7 @@ public class FileSnap implements SnapShot {
         File snap = null;
         boolean foundValid = false;
         for (int i = 0; i < snapList.size(); i++) {
+            //由于快照文件列表做了倒序排序，所以这里取出的第一个快照是最新的
             snap = snapList.get(i);
             InputStream snapIS = null;
             CheckedInputStream crcIn = null;
@@ -84,12 +85,14 @@ public class FileSnap implements SnapShot {
                 snapIS = new BufferedInputStream(new FileInputStream(snap));
                 crcIn = new CheckedInputStream(snapIS, new Adler32());
                 InputArchive ia = BinaryInputArchive.getArchive(crcIn);
+                //更新内存当中的dataTree和sessionTimeouts
                 deserialize(dt,sessions, ia);
                 long checkSum = crcIn.getChecksum().getValue();
                 long val = ia.readLong("val");
                 if (val != checkSum) {
                     throw new IOException("CRC corruption in snapshot :  " + snap);
                 }
+                //校验通过则不再反序列化后续的快照
                 foundValid = true;
                 break;
             } catch(IOException e) {
@@ -152,6 +155,7 @@ public class FileSnap implements SnapShot {
      * @throws IOException
      */
     private List<File> findNValidSnapshots(int n) throws IOException {
+        //将data下的快照文件按照后缀做倒序排序
         List<File> files = Util.sortDataDir(snapDir.listFiles(),"snapshot", false);
         int count = 0;
         List<File> list = new ArrayList<File>();

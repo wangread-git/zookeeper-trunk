@@ -82,6 +82,7 @@ public class FollowerRequestProcessor extends ZooKeeperCriticalThread implements
                     zks.pendingSyncs.add(request);
                     zks.getFollower().request(request);
                     break;
+                //create、delete、set等事务操作还需要请求一次leader
                 case OpCode.create:
                 case OpCode.create2:
                 case OpCode.delete:

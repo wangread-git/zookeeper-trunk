@@ -478,6 +478,7 @@ public class FastLeaderElection implements Election {
                                                     m.peerEpoch,
                                                     m.configData);
 
+                //发送给真正执行IO操作的QuorumCnxManager
                 manager.toSend(m.sid, requestBuffer);
 
             }
@@ -495,12 +496,14 @@ public class FastLeaderElection implements Election {
          */
         Messenger(QuorumCnxManager manager) {
 
+            //业务层发送线程，将消息发送给负责具体IO的QuorumCnxManager类
             this.ws = new WorkerSender(manager);
 
             this.wsThread = new Thread(this.ws,
                     "WorkerSender[myid=" + self.getId() + "]");
             this.wsThread.setDaemon(true);
 
+            //业务层接收线程，负责从QuorumCnxManager接收消息
             this.wr = new WorkerReceiver(manager);
 
             this.wrThread = new Thread(this.wr,
@@ -620,7 +623,9 @@ public class FastLeaderElection implements Election {
         proposedLeader = -1;
         proposedZxid = -1;
 
+        //业务发送队列
         sendqueue = new LinkedBlockingQueue<ToSend>();
+        //业务接收队列
         recvqueue = new LinkedBlockingQueue<Notification>();
         this.messenger = new Messenger(manager);
     }
@@ -660,6 +665,7 @@ public class FastLeaderElection implements Election {
      * Send notifications to all peers upon a change in our vote
      */
     private void sendNotifications() {
+        //给每一个server都发送自己的投票通知，包括自己
         for (long sid : self.getCurrentAndNextConfigVoters()) {
             QuorumVerifier qv = self.getQuorumVerifier();
             ToSend notmsg = new ToSend(ToSend.mType.notification,
@@ -702,6 +708,7 @@ public class FastLeaderElection implements Election {
     protected boolean totalOrderPredicate(long newId, long newZxid, long newEpoch, long curId, long curZxid, long curEpoch) {
         LOG.debug("id: " + newId + ", proposed id: " + curId + ", zxid: 0x" +
                 Long.toHexString(newZxid) + ", proposed zxid: 0x" + Long.toHexString(curZxid));
+        //默认的实现QuorumMaj权重为1
         if(self.getQuorumVerifier().getWeight(newId) == 0){
             return false;
         }
@@ -729,6 +736,7 @@ public class FastLeaderElection implements Election {
      *            Identifier of the vote received last
      */
     private boolean termPredicate(HashMap<Long, Vote> votes, Vote vote) {
+        //保存其他server的选票
         SyncedLearnerTracker voteSet = new SyncedLearnerTracker();
         voteSet.addQuorumVerifier(self.getQuorumVerifier());
         if (self.getLastSeenQuorumVerifier() != null
@@ -875,6 +883,7 @@ public class FastLeaderElection implements Election {
            self.start_fle = Time.currentElapsedTime();
         }
         try {
+            //收到的消息（投票）
             HashMap<Long, Vote> recvset = new HashMap<Long, Vote>();
 
             HashMap<Long, Vote> outofelection = new HashMap<Long, Vote>();
@@ -883,11 +892,13 @@ public class FastLeaderElection implements Election {
 
             synchronized(this){
                 logicalclock.incrementAndGet();
+                //先投自己一票
                 updateProposal(getInitId(), getInitLastLoggedZxid(), getPeerEpoch());
             }
 
             LOG.info("New election. My id =  " + self.getId() +
                     ", proposed zxid=0x" + Long.toHexString(proposedZxid));
+            //将自己的这一票通知给其他的server，由WorkerSender发送给负责具体IO操作的QuorumCnxManager
             sendNotifications();
 
             /*
@@ -899,6 +910,8 @@ public class FastLeaderElection implements Election {
                 /*
                  * Remove next notification from queue, times out after 2 times
                  * the termination time
+                 *
+                 * 取出其他server的投票通知
                  */
                 Notification n = recvqueue.poll(notTimeout,
                         TimeUnit.MILLISECONDS);
@@ -906,16 +919,22 @@ public class FastLeaderElection implements Election {
                 /*
                  * Sends more notifications if haven't received enough.
                  * Otherwise processes new notification.
+                 *
+                 * 如果空闲
                  */
                 if(n == null){
+                    // 如果没有收到其他server的投票通知而发送队列已经空了，就继续生产投票消息发送出去
                     if(manager.haveDelivered()){
                         sendNotifications();
                     } else {
+                        //消息还在，可能因为其他的server还没有启动导致第一次建立连接的时候失败导致消息没有发放出去，
+                        //所以此时继续和其他server尝试建立连接
                         manager.connectAll();
                     }
 
                     /*
                      * Exponential backoff
+                     * 延长获取通知的超时时间
                      */
                     int tmpTimeOut = notTimeout*2;
                     notTimeout = (tmpTimeOut < maxNotificationInterval?
@@ -926,21 +945,27 @@ public class FastLeaderElection implements Election {
                     /*
                      * Only proceed if the vote comes from a replica in the current or next
                      * voting view.
+                     *
+                     * 判断该server的状态，有可能因为本机的网络延迟，其他的server已经选举出来了
                      */
                     switch (n.state) {
                     case LOOKING:
                         // If notification > current, replace and send messages out
+                        // 依次比较选举轮数、事务zxid、服务器编号
+                        // 如果对方的选举轮数比自己的多，将当前的值替换成对方的
                         if (n.electionEpoch > logicalclock.get()) {
                             logicalclock.set(n.electionEpoch);
                             recvset.clear();
                             if(totalOrderPredicate(n.leader, n.zxid, n.peerEpoch,
                                     getInitId(), getInitLastLoggedZxid(), getPeerEpoch())) {
+                                //对方胜出，将自己提议的leader（最初是自己）改为对方的
                                 updateProposal(n.leader, n.zxid, n.peerEpoch);
                             } else {
                                 updateProposal(getInitId(),
                                         getInitLastLoggedZxid(),
                                         getPeerEpoch());
                             }
+                            //通知其他server对比结果
                             sendNotifications();
                         } else if (n.electionEpoch < logicalclock.get()) {
                             if(LOG.isDebugEnabled()){
@@ -962,8 +987,10 @@ public class FastLeaderElection implements Election {
                                     ", proposed election epoch=0x" + Long.toHexString(n.electionEpoch));
                         }
 
+                        //将选票添加到本机投票箱中，用来做终结选举判断
                         recvset.put(n.sid, new Vote(n.leader, n.zxid, n.electionEpoch, n.peerEpoch));
 
+                        //判断选举是否结束，即超过半数server同意，就终结本次选举
                         if (termPredicate(recvset,
                                 new Vote(proposedLeader, proposedZxid,
                                         logicalclock.get(), proposedEpoch))) {
@@ -983,9 +1010,11 @@ public class FastLeaderElection implements Election {
                              * relevant message from the reception queue
                              */
                             if (n == null) {
+                                //修改状态
                                 self.setPeerState((proposedLeader == self.getId()) ?
                                         ServerState.LEADING: learningState());
 
+                                //选举结果，即leader
                                 Vote endVote = new Vote(proposedLeader,
                                         proposedZxid, proposedEpoch);
                                 leaveInstance(endVote);

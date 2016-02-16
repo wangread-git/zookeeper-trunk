@@ -131,7 +131,7 @@ public class Follower extends Learner{
                QuorumVerifier qv = self.configFromString(new String(setDataTxn.getData()));
                self.setLastSeenQuorumVerifier(qv, true);                               
             }
-            
+            //提交给SyncRequestProcessor做日志及快照，再提交给SendAckRequestProcessor
             fzk.logRequest(hdr, txn);
             break;
         case Leader.COMMIT:

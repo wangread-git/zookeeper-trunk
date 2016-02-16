@@ -709,9 +709,12 @@ public class Leader {
        // pending all wait for a quorum of old and new config, so its not possible to get enough acks
        // for an operation without getting enough acks for preceding ops. But in the future if multiple
        // concurrent reconfigs are allowed, this can happen.
+
+       //判断是否有之前的事务还没有处理完，保证事务处理的顺序性
        if (outstandingProposals.containsKey(zxid - 1)) return false;
        
        // getting a quorum from all necessary configurations
+        //判断发送ACK的follower是否超过一半
         if (!p.hasAllQuorums()) {
            return false;                 
         }
@@ -725,9 +728,11 @@ public class Leader {
         }     
         
         // in order to be committed, a proposal must be accepted by a quorum              
-        
+        //从outstandingProposals中移除，当后面的follower再发送相同的request的ACK过来时就可以不再处理了
         outstandingProposals.remove(zxid);
-        
+
+        //toBeApplied用来维护follower提交过来的请求，在ToBeAppliedRequestProcessor当中会从ToBeApplied取出已经仲裁过的请求，将其提交
+        //给FinalRequestProcessor来更新leader自身的zkDataBase数据
         if (p.request != null) {
              toBeApplied.add(p);
         }
@@ -759,9 +764,11 @@ public class Leader {
             informAndActivate(p, designatedLeader);
             //turnOffFollowers();
         } else {
+            //发送COMMIT给所有的follower，将follower的commitProcessor唤醒
             commit(zxid);
             inform(p);
         }
+        //通知leader自身，将leader的commitProcessor唤醒
         zk.commitProcessor.commit(p.request);
         if(pendingSyncs.containsKey(zxid)){
             for(LearnerSyncRequest r: pendingSyncs.remove(zxid)) {
@@ -823,7 +830,7 @@ public class Leader {
                     Long.toHexString(zxid), followerAddr);
             return;
         }
-        
+        //记录已经响应的follower数量
         p.addAck(sid);        
         /*if (LOG.isDebugEnabled()) {
             LOG.debug("Count for zxid: 0x{} is {}",
@@ -1044,6 +1051,7 @@ public class Leader {
         } catch (IOException e) {
             LOG.warn("This really should be impossible", e);
         }
+        //构建一个议案请求包
         QuorumPacket pp = new QuorumPacket(Leader.PROPOSAL, request.zxid,
                 baos.toByteArray(), null);
 
@@ -1068,6 +1076,7 @@ public class Leader {
 
             lastProposed = p.packet.getZxid();
             outstandingProposals.put(lastProposed, p);
+            //通知所有的follower
             sendPacket(pp);
         }
         return p;

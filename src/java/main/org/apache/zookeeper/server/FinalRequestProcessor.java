@@ -126,6 +126,7 @@ public class FinalRequestProcessor implements RequestProcessor {
             }
 
             // do not add non quorum packets to the queue.
+            //如果是事务请求，需要将请求写到已提交日志中
             if (request.isQuorum()) {
                 zks.getZKDatabase().addCommittedProposal(request);
             }
@@ -146,6 +147,7 @@ public class FinalRequestProcessor implements RequestProcessor {
             }
         }
 
+        //request.cnxn==null表示该请求不是client发送的而是leader发送的，可以直接返回不用发送响应
         if (request.cnxn == null) {
             return;
         }

@@ -71,7 +71,9 @@ public class ProposalRequestProcessor implements RequestProcessor {
         if (request instanceof LearnerSyncRequest){
             zks.getLeader().processSync((LearnerSyncRequest)request);
         } else {
+            //先将request提交给CommitProcessor，CommitProcessor等待该事务的决策结果
             nextProcessor.processRequest(request);
+            //如果是事务请求的话
             if (request.getHdr() != null) {
                 // We need to sync and get consensus on any transactions
                 try {
@@ -79,6 +81,7 @@ public class ProposalRequestProcessor implements RequestProcessor {
                 } catch (XidRolloverException e) {
                     throw new RequestProcessorException(e.getMessage(), e);
                 }
+                //做日志及快照，并提交给AckRequestProcessor
                 syncProcessor.processRequest(request);
             }
         }

@@ -129,6 +129,8 @@ public class QuorumMaj implements QuorumVerifier {
     /**
      * Verifies if a set is a majority. Assumes that ackSet contains acks only
      * from votingMembers
+     *
+     * 判断ack的数量是否超过一半
      */
     public boolean containsQuorum(Set<Long> ackSet) {
         return (ackSet.size() > half);

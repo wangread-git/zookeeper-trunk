@@ -328,6 +328,8 @@ public class NIOServerCnxn extends ServerCnxn {
                             + Long.toHexString(sessionId)
                             + ", likely client has closed socket");
                 }
+                //在集群模式下，只有选举完成了才会创建zkServer，所以这里先判断zkServer是否等于null，如果等于null
+                //表示选举还没有完成，关闭客户端的连接
                 if (incomingBuffer.remaining() == 0) {
                     boolean isPayload;
                     if (incomingBuffer == lenBuffer) { // start of next request
