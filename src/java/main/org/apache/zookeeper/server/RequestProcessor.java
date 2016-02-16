@@ -29,6 +29,8 @@ package org.apache.zookeeper.server;
  * 
  * When shutdown is called, the request RequestProcessor should also shutdown
  * any RequestProcessors that it is connected to.
+ *
+ * 请求处理器采用的责任链模式
  */
 public interface RequestProcessor {
     @SuppressWarnings("serial")

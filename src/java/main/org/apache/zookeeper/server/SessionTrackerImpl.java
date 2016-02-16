@@ -62,6 +62,7 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements
         }
 
         final long sessionId;
+        //session超时时间
         final int timeout;
         boolean isClosing;
 
@@ -79,6 +80,10 @@ public class SessionTrackerImpl extends ZooKeeperCriticalThread implements
     /**
      * Generates an initial sessionId. High order byte is serverId, next 5
      * 5 bytes are from timestamp, and low order 2 bytes are 0s.
+     *
+     * id表示myid中配置的serverId，单机版为1
+     * 整个过程大致为取当前时间的后56位，在前面拼上id的后8位，如此一来，sessionId的自增保证
+     * 了sessionId在本机的唯一性，而前面的serverId则保证了全局唯一性
      */
     public static long initializeNextSession(long id) {
         long nextSid;

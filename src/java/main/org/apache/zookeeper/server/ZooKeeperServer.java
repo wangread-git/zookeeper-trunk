@@ -567,6 +567,7 @@ public class ZooKeeperServer implements SessionExpirer, ServerStats.Provider {
         }
         long sessionId = sessionTracker.createSession(timeout);
         Random r = new Random(sessionId ^ superSecret);
+        //ÃÓ≥‰session√‹¬Î
         r.nextBytes(passwd);
         ByteBuffer to = ByteBuffer.allocate(4);
         to.putInt(timeout);

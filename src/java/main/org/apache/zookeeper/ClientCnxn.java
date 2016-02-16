@@ -391,6 +391,7 @@ public class ClientCnxn {
         this.hostProvider = hostProvider;
         this.chrootPath = chrootPath;
 
+        //最多在一个sessionTimeout时间内建立完连接，所以平均建立连接的超时时间为sessionTimeout除以设置的server的个数
         connectTimeout = sessionTimeout / hostProvider.size();
         readTimeout = sessionTimeout * 2 / 3;
         readOnly = canBeReadOnly;

@@ -86,6 +86,8 @@ import org.apache.zookeeper.txn.TxnHeader;
  * state of the system. It counts on ZooKeeperServer to update
  * outstandingRequests, so that it can take into account transactions that are
  * in the queue to be applied when generating a transaction.
+ *
+ * 预处理器，做校验及部分封装工作
  */
 public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
         RequestProcessor {
@@ -376,10 +378,13 @@ public class PrepRequestProcessor extends ZooKeeperCriticalThread implements
                 String parentPath = validatePathForCreate(path, request.sessionId);
 
                 List<ACL> listACL = fixupACL(path, request.authInfo, createRequest.getAcl());
+                //检验父节点是否存在
                 ChangeRecord parentRecord = getRecordForPath(parentPath);
 
+                //检查是否有对父路径的修改权限
                 checkACL(zks, parentRecord.acl, ZooDefs.Perms.CREATE, request.authInfo);
                 int parentCVersion = parentRecord.stat.getCversion();
+                //如果是顺序节点，则补全path
                 if (createMode.isSequential()) {
                     path = path + String.format(Locale.ENGLISH, "%010d", parentCVersion);
                 }

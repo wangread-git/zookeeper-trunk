@@ -488,11 +488,13 @@ public class DataTree {
         stat.setAversion(0);
         stat.setEphemeralOwner(ephemeralOwner);
         DataNode parent = nodes.get(parentName);
+        //必须有父节点，否则抛出异常
         if (parent == null) {
             throw new KeeperException.NoNodeException();
         }
         synchronized (parent) {
             Set<String> children = parent.getChildren();
+            //如果已存在要创建的节点，也抛出异常
             if (children != null && children.contains(childName)) {
                 throw new KeeperException.NodeExistsException();
             }
@@ -504,9 +506,12 @@ public class DataTree {
             parent.stat.setCversion(parentCVersion);
             parent.stat.setPzxid(zxid);
             Long longval = convertAcls(acl);
+            //创建节点，与父节点绑定并添加到树中
             DataNode child = new DataNode(data, longval, stat);
             parent.addChild(childName);
             nodes.put(path, child);
+            //如果创建的是临时节点，需要保存创建临时节点的客户端与节点的关系，方便超时后从nodes中删除
+            //ephemerals的key即为该客户端的sessionId
             if (ephemeralOwner != 0) {
                 HashSet<String> list = ephemerals.get(ephemeralOwner);
                 if (list == null) {
@@ -541,6 +546,7 @@ public class DataTree {
             updateCount(lastPrefix, 1);
             updateBytes(lastPrefix, data == null ? 0 : data.length);
         }
+        //触发watcher
         dataWatches.triggerWatch(path, Event.EventType.NodeCreated);
         childWatches.triggerWatch(parentName.equals("") ? "/" : parentName,
                 Event.EventType.NodeChildrenChanged);

@@ -43,6 +43,8 @@ import org.slf4j.LoggerFactory;
  *             It never send ack back to the leader, so the nextProcessor will
  *             be null. This change the semantic of txnlog on the observer
  *             since it only contains committed txns.
+ *
+ * 对事务请求进行日志记录，当达到一定次数后，执行快照，只有写到磁盘上之后才会将此request传递到下一个RequestProcessor
  */
 public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
         RequestProcessor {
@@ -52,6 +54,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
         new LinkedBlockingQueue<Request>();
     private final RequestProcessor nextProcessor;
 
+    //快照线程
     private Thread snapInProcess = null;
     volatile private boolean running;
 
@@ -119,11 +122,14 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
                 }
                 if (si != null) {
                     // track the number of records written to the log
+                    //将请求记录到日志中，如果是事务返回true
                     if (zks.getZKDatabase().append(si)) {
                         logCount++;
+                        //当达到snapCount/2到snapCount中的一个随机值时，执行一次快照
                         if (logCount > (snapCount / 2 + randRoll)) {
                             randRoll = r.nextInt(snapCount/2);
                             // roll the log
+                            //执行快照，即将当前流置为null，方便下一次记录日志时创建一个新的文件句柄及对应的流
                             zks.getZKDatabase().rollLog();
                             // take a snapshot
                             if (snapInProcess != null && snapInProcess.isAlive()) {
@@ -132,6 +138,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
                                 snapInProcess = new ZooKeeperThread("Snapshot Thread") {
                                         public void run() {
                                             try {
+                                                //将当前的dataTree和sessionsWithTimeouts序列化到磁盘文件中
                                                 zks.takeSnapshot();
                                             } catch(Exception e) {
                                                 LOG.warn("Unexpected exception", e);
@@ -140,6 +147,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
                                     };
                                 snapInProcess.start();
                             }
+                            //重置为0
                             logCount = 0;
                         }
                     } else if (toFlush.isEmpty()) {
@@ -147,6 +155,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
                         // iff this is a read, and there are no pending
                         // flushes (writes), then just pass this to the next
                         // processor
+                        //如果是非事务请求，且之前没有请求遗留，则将request交接给下一个RequestProcessor，保证请求的顺序性
                         if (nextProcessor != null) {
                             nextProcessor.processRequest(si);
                             if (nextProcessor instanceof Flushable) {
@@ -175,6 +184,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
         if (toFlush.isEmpty())
             return;
 
+        //真正将流写入到磁盘中，并关闭流
         zks.getZKDatabase().commit();
         while (!toFlush.isEmpty()) {
             Request i = toFlush.remove();
