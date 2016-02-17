@@ -129,7 +129,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
                         if (logCount > (snapCount / 2 + randRoll)) {
                             randRoll = r.nextInt(snapCount/2);
                             // roll the log
-                            //执行快照，即将当前流置为null，方便下一次记录日志时创建一个新的文件句柄及对应的流
+                            //将当前日志输出流置为null，方便下一次记录日志时创建一个新的文件句柄及对应的流
                             zks.getZKDatabase().rollLog();
                             // take a snapshot
                             if (snapInProcess != null && snapInProcess.isAlive()) {
@@ -138,7 +138,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
                                 snapInProcess = new ZooKeeperThread("Snapshot Thread") {
                                         public void run() {
                                             try {
-                                                //将当前的dataTree和sessionsWithTimeouts序列化到磁盘文件中
+                                                //写快照，将当前的dataTree和sessionsWithTimeouts序列化到磁盘文件中
                                                 zks.takeSnapshot();
                                             } catch(Exception e) {
                                                 LOG.warn("Unexpected exception", e);

@@ -424,6 +424,8 @@ public class Leader {
 
             // Start thread that waits for connection requests from
             // new followers.
+
+            //等待follower的连接，为每个连接创建一个LearnerHandler，用单独的线程处理follower的请求
             cnxAcceptor = new LearnerCnxAcceptor();
             cnxAcceptor.start();
 

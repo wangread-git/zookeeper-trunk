@@ -285,6 +285,7 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory {
             try {
                 sc = acceptSocket.accept();
                 accepted = true;
+                //客户端的地址
                 InetAddress ia = sc.socket().getInetAddress();
                 int cnxncount = getClientCnxnCount(ia);
 
@@ -806,6 +807,7 @@ public class NIOServerCnxnFactory extends ServerCnxnFactory {
 
     private void addCnxn(NIOServerCnxn cnxn) {
         InetAddress addr = cnxn.getSocketAddress();
+        //记录每个客户端地址对应的连接
         Set<NIOServerCnxn> set = ipMap.get(addr);
         if (set == null) {
             // in general we will see 1 connection from each
